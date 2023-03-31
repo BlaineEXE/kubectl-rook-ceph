@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: multus-test-nginx-server-conf
+  labels:
+    app: multus-test-nginx
+data:
+  server.conf: |
+    server {
+        listen       8080;
+        server_name  localhost;
+
+        # access_log  /var/log/nginx/host.access.log  main;
+
+        # # default root config
+        # location / {
+        #     root   /usr/share/nginx/html;
+        #     index  index.html index.htm;
+        # }
+
+        # return the client ip upon connect
+        location / {
+            default_type text/plain;
+            return 200 "$remote_addr\n";
+        }
+    }

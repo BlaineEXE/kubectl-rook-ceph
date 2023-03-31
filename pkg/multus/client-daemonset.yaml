@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: multus-validation-test-client-{{ .clientID }}
+  labels:
+    app: multus-validation-test-client-{{ .clientID }}
+    app.kubernetes.io/name: "client"
+    app.kubernetes.io/instance: "client-{{ .clientID }}"
+    app.kubernetes.io/component: "client"
+    app.kubernetes.io/part-of: "multus-validation-test"
+    app.kubernetes.io/managed-by: "kubectl-rook-ceph"
+spec:
+  selector:
+    matchLabels:
+      app: multus-validation-test-client-{{ .clientID }}
+  template:
+    metadata:
+      labels:
+        app: multus-validation-test-client-{{ .clientID }}
+      annotations:
+        k8s.v1.cni.cncf.io/networks: "{{ .multusNetworks }}"
+    spec:
+      # TODO: selectors, affinities, tolerations
+      containers:
+        - name: multus-validation-test-client-{{ .clientID }}
+          image: quay.io/fedora/fedora:latest
+          command:
+            - sleep
+            - infinity
+          resources: {}
+          # regularly check if the client-server connections are working and stable. use a readiness
+          # probe so the pod won't get stuck in CrashLoopBackoff if the checks fail. this probe
+          # should be very sensitive to failures. if the probe fails with any regularity at all,
+          # it's likely that Ceph OSDs won't be stable. this means using a low failure threshold and
+          # high success threshold.
+          # assumption: a network with a latency more than 3 seconds (curl --max-time) is likely not
+          # going to support a Ceph cluster with even bare minimum performance
+          readinessProbe:
+            failureThreshold: 1
+            periodSeconds: 5
+            successThreshold: 12
+            timeoutSeconds: 4
+            exec: |
+              #!/usr/bin/env bash
+              set -xeuo pipefail
+
+              SERVER_PUBLIC_ADDR="{{ .serverPublicAddr }}"
+              SERVER_CLUSTER_ADDR="{{ .serverClusterAddr }}"
+
+              return_success=true
+              addrs_checked=0
+              for ip in $SERVER_PUBLIC_ADDR $SERVER_CLUSTER_ADDR; do
+                addrs_checked=$((addrs_checked+1))
+                if ! curl --insecure --max-time 3 "$ip"; then
+                  return_success=false
+                fi
+              done
+
+              # also make sure at least one curl to the server was made
+              $return_success && [[ $addrs_checked -gt 0 ]]
